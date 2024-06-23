@@ -5,7 +5,8 @@ import json
 import os
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
-CORS(app)  # 允许跨域请求
+CORS(app, resources={r"/*": {"origins": "http://103.20.220.93"}})
+
 
 # 读取课程数据
 df = pd.read_csv('Courses.csv', encoding='gbk')
