@@ -5,7 +5,7 @@ import json
 import os
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
-CORS(app, resources={r"/*": {"origins": "http://103.20.220.93"}})
+CORS(app)
 
 
 # 读取课程数据
