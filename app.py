@@ -1,20 +1,12 @@
 from flask import Flask, request, jsonify, send_from_directory, render_template
 from flask_cors import CORS
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
 import pandas as pd
 import json
-import os
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app)
 
-# 设置限流器
-limiter = Limiter(
-    get_remote_address,
-    app=app,
-    default_limits=["1000 per second"]
-)
+
 
 # 读取课程数据
 df = pd.read_csv('CouresesData.csv', encoding='gbk')
@@ -28,7 +20,6 @@ def serve_static(path):
     return send_from_directory('static', path)
 
 @app.route('/search', methods=['GET'])
-@limiter.limit("30 per second")
 def search():
     course_name = request.args.get('course_name', '')
     instructor = request.args.get('instructor', '')
@@ -76,7 +67,6 @@ def validate_course_data(course_data):
     return True, None
 
 @app.route('/add_course', methods=['POST'])
-@limiter.limit("30 per second")
 def add_course():
     new_course = request.json
     is_valid, error_message = validate_course_data(new_course)
