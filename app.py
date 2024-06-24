@@ -1,15 +1,23 @@
 from flask import Flask, request, jsonify, send_from_directory, render_template
-import pandas as pd
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+import pandas as pd
 import json
 import os
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app)
 
+# 设置限流器
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["1000 per second"]
+)
 
 # 读取课程数据
-df = pd.read_csv('Courses.csv', encoding='gbk')
+df = pd.read_csv('CouresesData.csv', encoding='gbk')
 
 @app.route('/')
 def serve_index():
@@ -20,6 +28,7 @@ def serve_static(path):
     return send_from_directory('static', path)
 
 @app.route('/search', methods=['GET'])
+@limiter.limit("30 per second")
 def search():
     course_name = request.args.get('course_name', '')
     instructor = request.args.get('instructor', '')
@@ -47,9 +56,30 @@ def search():
     response.headers['Content-Type'] = 'application/json; charset=utf-8'
     return response
 
+def validate_course_data(course_data):
+    required_fields = ['course_name', 'course_attribute', 'instructor', 'content', 'attendance', 'assessment', 'grade']
+    for field in required_fields:
+        if field not in course_data:
+            return False, f"Missing required field: {field}"
+
+    if course_data['grade'] != 'Unknown':
+        try:
+            grade = int(course_data['grade'])
+            if grade < 0 or grade > 100:
+                return False, "Grade must be between 0 and 100 or 'Unknown'"
+        except ValueError:
+            return False, "Grade must be an integer between 0 and 100 or 'Unknown'"
+
+    return True, None
+
 @app.route('/add_course', methods=['POST'])
+@limiter.limit("30 per second")
 def add_course():
     new_course = request.json
+    is_valid, error_message = validate_course_data(new_course)
+    if not is_valid:
+        return jsonify({'error': error_message}), 400
+
     try:
         # 将新课程评价添加到新的 DataFrame
         new_course_df = pd.DataFrame([new_course])
@@ -70,4 +100,4 @@ def add_course():
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=5000, threaded=True)
