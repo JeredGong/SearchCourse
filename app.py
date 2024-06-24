@@ -37,7 +37,8 @@ def search():
     # 处理NaN值，填充为"未知"
     query = query.fillna('未知')
 
-    print(f"Received search parameters: course_name={course_name}, instructor={instructor}")
+    if app.debug:
+        print(f"Received search parameters: course_name={course_name}, instructor={instructor}")
 
     if course_name:
         query = query[query['课程名称'].str.contains(course_name, na=False)]
@@ -46,11 +47,13 @@ def search():
 
     results = query.to_dict(orient='records')
 
-    print(f"Query results: {results}")
+    if app.debug:
+        print(f"Query results: {results}")
 
     # 调试输出JSON响应
-    json_results = json.dumps(results, ensure_ascii=False)
-    print(f"JSON results: {json_results}")
+    if app.debug:
+        json_results = json.dumps(results, ensure_ascii=False)
+        print(f"JSON results: {json_results}")
 
     response = jsonify(results)
     response.headers['Content-Type'] = 'application/json; charset=utf-8'
@@ -96,7 +99,8 @@ def add_course():
 
         return jsonify({'message': 'Course added successfully'}), 200
     except Exception as e:
-        print(f"Error adding course: {e}")
+        if app.debug:
+            print(f"Error adding course: {e}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
