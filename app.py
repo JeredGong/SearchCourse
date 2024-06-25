@@ -1,15 +1,18 @@
 from flask import Flask, request, jsonify, send_from_directory, render_template
 from flask_cors import CORS
 import pandas as pd
-import json
+import orjson
+import gzip
+import redis
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app)
 
+# 初始化Redis缓存
+cache = redis.Redis(host='localhost', port=6379, db=0)
 
-
-# 读取课程数据
-df = pd.read_csv('CouresesData.csv', encoding='gbk')
+# 读取课程数据并缓存到内存中
+df = pd.read_csv('CouresesData.csv', encoding='gbk').fillna('未知')
 
 @app.route('/')
 def serve_index():
@@ -23,30 +26,40 @@ def serve_static(path):
 def search():
     course_name = request.args.get('course_name', '')
     instructor = request.args.get('instructor', '')
-    query = df.copy()
 
-    # 处理NaN值，填充为"未知"
-    query = query.fillna('未知')
+    # 创建缓存键
+    cache_key = f"search:{course_name}:{instructor}"
+    cached_results = cache.get(cache_key)
 
-    if app.debug:
-        print(f"Received search parameters: course_name={course_name}, instructor={instructor}")
+    if cached_results:
+        results = orjson.loads(cached_results)
+    else:
+        query = df.copy()
 
-    if course_name:
-        query = query[query['课程名称'].str.contains(course_name, na=False)]
-    if instructor:
-        query = query[query['授课老师'].str.contains(instructor, na=False)]
+        if app.debug:
+            print(f"Received search parameters: course_name={course_name}, instructor={instructor}")
 
-    results = query.to_dict(orient='records')
+        # 过滤数据
+        if course_name:
+            query = query[query['课程名称'].str.contains(course_name, na=False)]
+        if instructor:
+            query = query[query['授课老师'].str.contains(instructor, na=False)]
 
-    if app.debug:
-        print(f"Query results: {results}")
+        results = query.to_dict(orient='records')
 
-    # 调试输出JSON响应
-    if app.debug:
-        json_results = json.dumps(results, ensure_ascii=False)
-        print(f"JSON results: {json_results}")
+        if app.debug:
+            print(f"Query results: {results}")
 
-    response = jsonify(results)
+        # 缓存结果
+        cache.set(cache_key, orjson.dumps(results), ex=60 * 60)  # 缓存1小时
+
+    # 压缩响应数据
+    response = app.response_class(
+        response=gzip.compress(orjson.dumps(results)),
+        status=200,
+        mimetype='application/json'
+    )
+    response.headers['Content-Encoding'] = 'gzip'
     response.headers['Content-Type'] = 'application/json; charset=utf-8'
     return response
 
