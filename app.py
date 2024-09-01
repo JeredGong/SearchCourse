@@ -106,37 +106,5 @@ def add_course():
             print(f"Error adding course: {e}")
         return jsonify({'error': str(e)}), 500
 
-
-@app.route('/add_survey', methods=['POST'])
-def add_survey():
-    survey_data = request.json
-
-    # 定义必填字段
-    required_fields = ['satisfaction', 'suggestions', 'timestamp']
-
-    # 验证数据完整性
-    for field in required_fields:
-        if field not in survey_data:
-            return jsonify({'error': f'Missing required field: {field}'}), 400
-
-    try:
-        # 将问卷数据添加到新的 DataFrame
-        new_survey_df = pd.DataFrame([survey_data])
-
-        # 尝试读取现有的 surveyData.csv 文件，如果不存在则创建新的
-        try:
-            existing_survey_df = pd.read_csv('surveyData.csv', encoding='utf-8')
-            updated_survey_df = pd.concat([existing_survey_df, new_survey_df], ignore_index=True)
-        except FileNotFoundError:
-            updated_survey_df = new_survey_df
-
-        # 将更新后的 DataFrame 写入 surveyData.csv 文件
-        updated_survey_df.to_csv('surveyData.csv', encoding='utf-8', index=False)
-
-        return jsonify({'message': 'Survey submitted successfully'}), 200
-    except Exception as e:
-        if app.debug:
-            print(f"Error adding survey: {e}")
-        return jsonify({'error': str(e)}), 500
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, threaded=True)
