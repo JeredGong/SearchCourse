@@ -5,16 +5,23 @@ import orjson
 import gzip
 import redis
 from datetime import datetime, timedelta
+import threading
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app)
 
-# 初始化Redis缓存
-cache = redis.Redis(host='localhost', port=6379, db=0)
+# 初始化Redis连接池
+pool = redis.ConnectionPool(host='localhost', port=6379, db=0, max_connections=10)
+cache = redis.Redis(connection_pool=pool)
 
 # 读取课程数据并缓存到内存中
 df = pd.read_csv('CouresesData.csv', encoding='gbk').fillna('未知')
 
+def record_ip(client_ip, visit_key, midnight_tomorrow):
+    with cache.pipeline() as pipe:
+        pipe.pfadd(visit_key, client_ip)
+        pipe.expireat(visit_key, int(midnight_tomorrow.timestamp()))
+        pipe.execute()
 
 @app.route('/')
 def serve_index():
@@ -27,10 +34,9 @@ def serve_index():
 
     # 使用Redis的HyperLogLog结构记录独立IP的访问量
     visit_key = f"visit_count:{today}"
-    cache.pfadd(visit_key, client_ip)
 
-    # 设置统计量在第二天0点过期
-    cache.expireat(visit_key, int(midnight_tomorrow.timestamp()))
+    # 启动一个线程异步处理IP统计，并使用Redis管道
+    threading.Thread(target=record_ip, args=(client_ip, visit_key, midnight_tomorrow)).start()
 
     return render_template('index.html')
 
@@ -175,8 +181,6 @@ def get_statistics():
         # 获取今日的 visitCount
         today = datetime.today().strftime('%Y-%m-%d')
         visit_count = cache.pfcount(f"visit_count:{today}")
-        print(f"visit_count:{today}={visit_count}")
-        print(f"evaluation_count={evaluation_count}")
         # 返回统计数据
         return jsonify({
             'evaluationCount': evaluation_count,
