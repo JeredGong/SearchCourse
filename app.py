@@ -4,7 +4,7 @@ import pandas as pd
 import orjson
 import gzip
 import redis
-from datetime import datetime
+from datetime import datetime, timedelta
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app)
@@ -22,9 +22,15 @@ def serve_index():
     client_ip = request.remote_addr
     today = datetime.today().strftime('%Y-%m-%d')
 
+    # 计算第二天的0点时间
+    midnight_tomorrow = datetime.combine(datetime.today() + timedelta(days=1), datetime.min.time())
+
     # 使用Redis的HyperLogLog结构记录独立IP的访问量
     visit_key = f"visit_count:{today}"
     cache.pfadd(visit_key, client_ip)
+
+    # 设置统计量在第二天0点过期
+    cache.expireat(visit_key, int(midnight_tomorrow.timestamp()))
 
     return render_template('index.html')
 
