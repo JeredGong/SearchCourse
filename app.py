@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify, send_from_directory, render_template, make_response
 import pandas as pd
+from flask_cors import CORS
 import orjson
 import gzip
 import redis
@@ -9,7 +10,7 @@ import time
 from functools import lru_cache
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
-
+CORS(app)
 # 初始化Redis连接池
 pool = redis.ConnectionPool(host='localhost', port=6379, db=0, max_connections=10)
 cache = redis.Redis(connection_pool=pool)
