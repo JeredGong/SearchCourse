@@ -10,6 +10,7 @@ import time
 from functools import lru_cache
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
+app.config['USE_ETAGS'] = True  # 启用 ETag 缓存
 CORS(app)
 # 初始化Redis连接池
 pool = redis.ConnectionPool(host='localhost', port=6379, db=0, max_connections=10)
@@ -17,38 +18,6 @@ cache = redis.Redis(connection_pool=pool)
 
 # 读取课程数据并缓存到内存中
 df = pd.read_csv('CouresesData.csv', encoding='gbk').fillna('未知')
-
-# 使用字典作为内存缓存，用于存储独立IP的访问量
-ip_cache = set()
-cache_lock = threading.Lock()
-
-def reset_ip_cache():
-    """每天北京时间0点重置缓存"""
-    while True:
-        now = datetime.now()
-        # 计算下一次北京时间0点的时间
-        next_reset_time = (datetime.now() + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-        sleep_seconds = (next_reset_time - now).total_seconds()
-
-        if app.debug:
-            print(f"Scheduled cache reset at {next_reset_time} (in {sleep_seconds} seconds)")
-
-        # 休眠直到下一次清理
-        time.sleep(sleep_seconds)
-
-        # 清空缓存
-        with cache_lock:
-            ip_cache.clear()
-            if app.debug:
-                print(f"Cache reset at {datetime.now()}")
-
-# 启动缓存清理线程
-threading.Thread(target=reset_ip_cache, daemon=True).start()
-
-def record_ip(client_ip):
-    """记录客户端IP地址"""
-    with cache_lock:
-        ip_cache.add(client_ip)
 
 @lru_cache(maxsize=32)
 def search_cache(course_name, instructor):
@@ -64,15 +33,9 @@ def search_cache(course_name, instructor):
 
 @app.route('/')
 def serve_index():
-    # 获取客户端IP地址
-    client_ip = request.remote_addr
-
-    # 异步记录IP
-    threading.Thread(target=record_ip, args=(client_ip,)).start()
-
     # 设置浏览器缓存首页内容（例如缓存1小时）
     response = make_response(render_template('index.html'))
-    response.headers['Cache-Control'] = 'public, max-age=3600'
+    response.headers['Cache-Control'] = 'public, max-age=360000'
     return response
 
 
@@ -100,7 +63,7 @@ def search():
         results = search_cache(course_name, instructor)
 
         # 缓存查询结果到Redis中，缓存6小时
-        cache.set(cache_key, orjson.dumps(results), ex=6 * 60 * 60)
+        cache.set(cache_key, orjson.dumps(results), ex=24 * 60 * 60)
 
     # 压缩响应数据
     response = app.response_class(
@@ -110,7 +73,7 @@ def search():
     )
     response.headers['Content-Encoding'] = 'gzip'
     response.headers['Content-Type'] = 'application/json; charset=utf-8'
-    response.headers['Cache-Control'] = 'public, max-age=3600'  # 缓存1小时
+    response.headers['Cache-Control'] = 'public, max-age=7200'  # 缓存1小时
     return response
 
 def validate_course_data(course_data):
@@ -199,7 +162,7 @@ def get_statistics():
         evaluation_count = courses_count + new_courses_count
 
         # 获取当前缓存中的IP访问数量
-        visit_count = len(ip_cache)
+        visit_count = new_courses_count
 
         response_data = {
             'evaluationCount': evaluation_count,
