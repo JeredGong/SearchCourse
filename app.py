@@ -22,14 +22,26 @@ df = pd.read_csv('CouresesData.csv', encoding='gbk').fillna('未知')
 @lru_cache(maxsize=32)
 def search_cache(course_name, instructor):
     """内存缓存，用于缓存高频搜索查询"""
-    query = df.copy()
-    if course_name:
-        query = query[query['课程名称'].str.contains(course_name, na=False)]
-    if instructor:
-        query = query[query['授课老师'].str.contains(instructor, na=False)]
+    query = df.copy()  # 创建数据副本
 
+    # 初始化条件掩码
+    mask = pd.Series([False] * len(query))  # 默认全为 False
+
+    # 如果有 course_name 条件，筛选满足条件的记录
+    if course_name:
+        mask |= query['课程名称'].str.contains(course_name, na=False)
+
+    # 如果有 instructor 条件，筛选满足条件的记录
+    if instructor:
+        mask |= query['授课老师'].str.contains(instructor, na=False)
+
+    # 应用掩码，保留满足条件的记录
+    query = query[mask]
+
+    # 转换为字典列表返回
     results = query.to_dict(orient='records')
     return results
+
 
 def clear_cache_on_startup():
     """
