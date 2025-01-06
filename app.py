@@ -31,7 +31,6 @@ def search_cache(course_name, instructor):
     results = query.to_dict(orient='records')
     return results
 
-@app.before_first_request
 def clear_cache_on_startup():
     """
     在应用启动时清空内存缓存和 Redis 缓存。
@@ -204,4 +203,5 @@ def get_statistics():
 
 
 if __name__ == '__main__':
+    clear_cache_on_startup()  # 启动时清空缓存
     app.run(host='0.0.0.0', port=5000, threaded=True)
