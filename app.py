@@ -31,6 +31,24 @@ def search_cache(course_name, instructor):
     results = query.to_dict(orient='records')
     return results
 
+@app.before_first_request
+def clear_cache_on_startup():
+    """
+    在应用启动时清空内存缓存和 Redis 缓存。
+    """
+    try:
+        print("Clearing caches on startup...")
+
+        # 清空内存缓存
+        search_cache.cache_clear()
+
+        # 清空 Redis 缓存
+        cache.flushdb()
+
+        print("Caches cleared successfully.")
+    except Exception as e:
+        print(f"Error during cache clearing: {e}")
+
 @app.route('/')
 def serve_index():
     # 设置浏览器缓存首页内容（例如缓存1小时）
