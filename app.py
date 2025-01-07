@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify, send_from_directory, render_template,
 import pandas as pd
 from flask_cors import CORS
 import orjson
-gzip
+import gzip
 import redis
 from datetime import datetime, timedelta
 import threading
