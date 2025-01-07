@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify, send_from_directory, render_template,
 import pandas as pd
 from flask_cors import CORS
 import orjson
-import gzip
+gzip
 import redis
 from datetime import datetime, timedelta
 import threading
@@ -12,6 +12,7 @@ from functools import lru_cache
 app = Flask(__name__, static_folder='static', template_folder='templates')
 app.config['USE_ETAGS'] = True  # 启用 ETag 缓存
 CORS(app)
+
 # 初始化Redis连接池
 pool = redis.ConnectionPool(host='localhost', port=6379, db=0, max_connections=10)
 cache = redis.Redis(connection_pool=pool)
@@ -22,30 +23,48 @@ df = pd.read_csv('CouresesData.csv', encoding='gbk').fillna('未知')
 @lru_cache(maxsize=32)
 def search_cache(course_name, instructor):
     """内存缓存，用于缓存高频搜索查询"""
-    query = df.copy()  # 创建数据副本
-
-    # 初始化条件掩码
-    mask = pd.Series([False] * len(query))  # 默认全为 False
-
-    # 如果有 course_name 条件，筛选满足条件的记录
+    query = df.copy()
     if course_name:
-        mask |= query['课程名称'].str.contains(course_name, na=False)
-
-    # 如果有 instructor 条件，筛选满足条件的记录
+        query = query[query['课程名称'].str.contains(course_name, na=False)]
     if instructor:
-        mask |= query['授课老师'].str.contains(instructor, na=False)
+        query = query[query['授课老师'].str.contains(instructor, na=False)]
 
-    # 应用掩码，保留满足条件的记录
-    query = query[mask]
-
-    # 转换为字典列表返回
     results = query.to_dict(orient='records')
     return results
+
+def verify_cache_consistency():
+    """
+    核实Redis缓存与原始数据的一致性。
+    """
+    keys = cache.keys("search:*")
+    for key in keys:
+        try:
+            # 从缓存中加载数据
+            cached_results = orjson.loads(cache.get(key))
+            
+            # 提取查询参数
+            _, course_name, instructor = key.decode().split(":")
+
+            # 使用相同的查询条件从原始数据中获取结果
+            query = df.copy()
+            if course_name:
+                query = query[query['课程名称'].str.contains(course_name, na=False)]
+            if instructor:
+                query = query[query['授课老师'].str.contains(instructor, na=False)]
+
+            expected_results = query.to_dict(orient='records')
+
+            # 比较缓存结果与原始数据结果
+            if expected_results != cached_results:
+                # 如果不一致，更新缓存
+                cache.set(key, orjson.dumps(expected_results), ex=24 * 60 * 60)
+        except Exception as e:
+            print(f"Error verifying cache for key {key}: {e}")
 
 
 def clear_cache_on_startup():
     """
-    在应用启动时清空内存缓存和 Redis 缓存。
+    在应用启动时清空内存缓存和 Redis 缓存，并核实一致性。
     """
     try:
         print("Clearing caches on startup...")
@@ -56,7 +75,10 @@ def clear_cache_on_startup():
         # 清空 Redis 缓存
         cache.flushdb()
 
-        print("Caches cleared successfully.")
+        # 确保缓存在初始时与数据一致
+        verify_cache_consistency()
+
+        print("Caches cleared and verified successfully.")
     except Exception as e:
         print(f"Error during cache clearing: {e}")
 
@@ -67,14 +89,12 @@ def serve_index():
     response.headers['Cache-Control'] = 'public, max-age=360000'
     return response
 
-
 @app.route('/static/<path:path>')
 def serve_static(path):
     # 设置缓存头，让静态文件在浏览器中缓存（例如缓存30天）
     response = send_from_directory('static', path)
     response.headers['Cache-Control'] = 'public, max-age=2592000'
     return response
-
 
 @app.route('/search', methods=['GET'])
 def search():
@@ -120,6 +140,7 @@ def validate_course_data(course_data):
             return False, "Grade must be an integer between 0 and 100 or 'Unknown'"
 
     return True, None
+
 @app.route('/add_course', methods=['POST'])
 def add_course():
     new_course = request.json
@@ -147,38 +168,6 @@ def add_course():
             print(f"Error adding course: {e}")
         return jsonify({'error': str(e)}), 500
 
-
-@app.route('/add_survey', methods=['POST'])
-def add_survey():
-    survey_data = request.json
-
-    # 定义必填字段
-    required_fields = ['curricula', 'suggestions', 'accept', 'expectation', 'timestamp']
-
-    # 验证数据完整性
-    for field in required_fields:
-        if field not in survey_data:
-            return jsonify({'error': f'Missing required field: {field}'}), 400
-
-    try:
-        # 将问卷数据添加到新的 DataFrame
-        new_survey_df = pd.DataFrame([survey_data])
-
-        # 尝试读取现有的 surveyData.csv 文件，如果不存在则创建新的
-        try:
-            existing_survey_df = pd.read_csv('surveyData.csv', encoding='utf-8')
-            updated_survey_df = pd.concat([existing_survey_df, new_survey_df], ignore_index=True)
-        except FileNotFoundError:
-            updated_survey_df = new_survey_df
-
-        # 将更新后的 DataFrame 写入 surveyData.csv 文件
-        updated_survey_df.to_csv('surveyData.csv', encoding='utf-8', index=False)
-
-        return jsonify({'message': 'Survey submitted successfully'}), 200
-    except Exception as e:
-        if app.debug:
-            print(f"Error adding survey: {e}")
-        return jsonify({'error': str(e)}), 500
 @app.route('/statistic', methods=['GET'])
 def get_statistics():
     try:
@@ -190,12 +179,9 @@ def get_statistics():
             new_courses_count = 0
         evaluation_count = courses_count + new_courses_count
 
-        # 获取当前缓存中的IP访问数量
-        visit_count = new_courses_count
-
         response_data = {
             'evaluationCount': evaluation_count,
-            'visitCount': visit_count
+            'visitCount': new_courses_count
         }
 
         # 压缩响应数据
@@ -213,7 +199,6 @@ def get_statistics():
             print(f"Error fetching statistics: {e}")
         return jsonify({'error': str(e)}), 500
 
-
 if __name__ == '__main__':
-    clear_cache_on_startup()  # 启动时清空缓存
+    clear_cache_on_startup()  # 启动时清空缓存并核实一致性
     app.run(host='0.0.0.0', port=5000, threaded=True)
