@@ -25,9 +25,9 @@ def search_cache(course_name, instructor):
     """内存缓存，用于缓存高频搜索查询"""
     query = df.copy()
     if course_name:
-        query = query[query['课程名称'].str.contains(course_name, na=False)]
+        query = query[query['课程名称'].str.contains(course_name, na=False, regex=True)]
     if instructor:
-        query = query[query['授课老师'].str.contains(instructor, na=False)]
+        query = query[query['授课老师'].str.contains(instructor, na=False, regex=True)]
 
     results = query.to_dict(orient='records')
     return results
